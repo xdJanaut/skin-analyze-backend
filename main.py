@@ -33,18 +33,23 @@ print("ROBOFLOW_API_KEY loaded?", bool(os.getenv("ROBOFLOW_API_KEY")))
 
 app = FastAPI()
 
+os.makedirs("annotated", exist_ok=True)
 app.mount("/annotated", StaticFiles(directory="annotated"), name="annotated")
 app.include_router(analysis.router)
 
 app.add_middleware(
+    app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173",
-                   "https://*.vercel.app",
-                    "https://your-app-name.vercel.app"
-                     ],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://skin-analyze-frontend-5pduu6dtj-xdjanauts-projects.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
 )
 
 @app.get("/")
