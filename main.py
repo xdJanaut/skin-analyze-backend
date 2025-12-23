@@ -38,19 +38,15 @@ app.mount("/annotated", StaticFiles(directory="annotated"), name="annotated")
 app.include_router(analysis.router)
 
 app.add_middleware(
-    app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "https://skin-analyze-frontend.vercel.app",  # <-- change to your real Vercel domain
+        "https://skin-analyze-frontend-5pduu6dtj-xdjanauts-projects.vercel.app",
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-
-)
-
 )
 
 @app.get("/")
