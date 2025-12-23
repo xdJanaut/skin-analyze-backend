@@ -19,5 +19,5 @@ anyio==4.12.0
 starlette==0.35.1
 typing-extensions==4.15.0
 idna==3.7
-certifi==2024.8.30
+certifi==2023.7.22
 urllib3==2.2.3
