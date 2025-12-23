@@ -206,7 +206,16 @@ def generate_feedback_multi(detection_summary: dict, avg_confidence: float):
                 recommendations.append(rec)
                 seen_recommendations.add(rec)
     
-    return feedback, recommendations
+    if total_concerns == 0:
+        severity = "clear"
+    elif total_concerns <= 5:
+        severity = "mild"
+    elif total_concerns <= 15:
+        severity = "moderate"
+    else:
+        severity = "severe"
+
+    return severity, feedback, recommendations
 
 def determine_severity_from_score(score: int) -> str:
     """
