@@ -121,6 +121,7 @@ def generate_feedback_multi(detection_summary: dict, avg_confidence: float):
             "Stay hydrated and get adequate sleep",
             "Cleanse gently twice daily"
         ]
+        return feedback, recommendations
     
     concerns = []
     for condition_type, count in detection_summary.items():
@@ -254,7 +255,7 @@ async def analyze_face(
             file_path = convert_heic_to_jpg(file_path)
         
         roboflow_result = analyze_image(str(file_path))
-        annotated_filename = f"annotated_{datetime.now().timestamp()}_{file.filename}"
+        annotated_filename = f"annotated_{datetime.now().timestamp()}{file_path.suffix}"
         annotated_path = ANNOTATED_DIR / annotated_filename
 
         draw_detections(str(file_path), roboflow_result.get("predictions", []), str(annotated_path))
