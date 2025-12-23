@@ -9,7 +9,6 @@ from database import SessionLocal, User, Analysis, Base, engine  # ADDED: Analys
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from routers import analysis  
 import json
 
 class UserRegister(BaseModel):
@@ -32,6 +31,8 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 print("ROBOFLOW_API_KEY loaded?", bool(os.getenv("ROBOFLOW_API_KEY")))
 
 app = FastAPI()
+
+from routers import analysis  
 
 os.makedirs("annotated", exist_ok=True)
 app.mount("/annotated", StaticFiles(directory="annotated"), name="annotated")
