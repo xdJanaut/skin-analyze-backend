@@ -38,7 +38,7 @@ app.include_router(analysis.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"
+    allow_origins=["http://localhost:5173",
                    "https://*.vercel.app",
                     "https://your-app-name.vercel.app"
                      ],
@@ -150,4 +150,5 @@ async def get_analysis_history(
 # ============================================================================
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
