@@ -11,6 +11,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import json
 
+from database import Base, engine
+
+# Create all tables on startup
+print("🔧 Creating database tables...")
+Base.metadata.create_all(bind=engine)
+print("✅ Database tables ready!")
+
 class UserRegister(BaseModel):
     username: str
     email: EmailStr
