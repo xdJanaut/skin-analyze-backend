@@ -1,5 +1,8 @@
 from pathlib import Path
 from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
+
 import os
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, Depends, HTTPException, status
@@ -13,10 +16,6 @@ import json
 
 from database import Base, engine
 
-# Create all tables on startup
-print("🔧 Creating database tables...")
-Base.metadata.create_all(bind=engine)
-print("✅ Database tables ready!")
 
 class UserRegister(BaseModel):
     username: str
@@ -34,10 +33,16 @@ def get_db():
     finally:
         db.close()
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 print("ROBOFLOW_API_KEY loaded?", bool(os.getenv("ROBOFLOW_API_KEY")))
 
 app = FastAPI()
+
+@app.on_event("startup")
+def startup():
+    print("DB URL:", str(engine.url))
+    Base.metadata.create_all(bind=engine)
+    print("✅ Tables ensured")
+
 
 from routers import analysis  
 
