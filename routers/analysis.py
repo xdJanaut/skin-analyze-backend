@@ -297,7 +297,7 @@ async def analyze_face(
         print(f"📊 Detection breakdown: {detection_summary}")
         
         skin_score = calculate_skin_score_multi(detection_summary, avg_confidence)
-        feedback, recommendations = generate_feedback_multi(detection_summary, avg_confidence)
+        _, feedback, recommendations = generate_feedback_multi(detection_summary, avg_confidence)
         severity = determine_severity_from_score(skin_score)
         print(f"✅ Analysis complete: {total_concerns} total concerns, score: {skin_score}/100")
         

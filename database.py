@@ -2,17 +2,27 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+import os
 
-# SQLite database
-SQLALCHEMY_DATABASE_URL = "sqlite:///./acne_analyzer.db"
+# Get database URL from environment variable (Railway provides this)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False}
-)
+# If DATABASE_URL is not set (local development), use SQLite
+if not SQLALCHEMY_DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./acne_analyzer.db"
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, 
+        connect_args={"check_same_thread": False}
+    )
+else:
+    # PostgreSQL URL fix for SQLAlchemy (Railway uses postgres://, SQLAlchemy needs postgresql://)
+    if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    
+    # Create engine for PostgreSQL
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 # User model
@@ -24,6 +34,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
     analyses = relationship("Analysis", back_populates="user")
 
 class Analysis(Base):
@@ -44,6 +55,3 @@ class Analysis(Base):
     # Relationship to user
     user = relationship("User", back_populates="analyses")
 
-
-# Create all tables
-Base.metadata.create_all(bind=engine)
