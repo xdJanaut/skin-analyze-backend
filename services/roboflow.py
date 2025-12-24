@@ -55,7 +55,7 @@ def analyze_secondary(image_path: str) -> Dict[str, Any]:
     url = f"https://detect.roboflow.com/{secondary_model}/{secondary_version}"
     params = {
         "api_key": api_key,
-        "confidence": 10,
+        "confidence": 20,
         "overlap": 30
     }
     
