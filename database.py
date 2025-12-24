@@ -50,8 +50,8 @@ class Analysis(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     detection_summary = Column(Text, nullable=True)  # JSON string
     feedback = Column(Text, nullable=True)
-    recommendations = Column(Text, nullable=True) 
+    recommendations = Column(Text, nullable=True)
+    secondary_summary = Column(Text, nullable=True)  
     
     # Relationship to user
     user = relationship("User", back_populates="analyses")
-

@@ -518,6 +518,7 @@ async def analyze_face(
                         image_path=f"/annotated/{annotated_filename}",
                         created_at=datetime.now(),
                         detection_summary=json.dumps(detection_summary),
+                        secondary_summary= json.dumps(secondary_summary) if secondary_summary else None,
                         feedback=feedback,
                         recommendations=json.dumps(recommendations),
                     )

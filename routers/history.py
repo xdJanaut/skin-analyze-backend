@@ -14,7 +14,6 @@ def get_db():
     finally:
         db.close()
 
-# UPDATED: Return data in the format frontend expects
 @router.get("/history")
 async def get_history(
     current_user: str = Depends(get_current_user),
@@ -26,7 +25,6 @@ async def get_history(
     
     analyses = db.query(Analysis).filter(Analysis.user_id == user.id).order_by(Analysis.created_at.desc()).all()
     
-    # Format the response to match what frontend expects
     return {
         "history": [
             {
@@ -38,13 +36,14 @@ async def get_history(
                 "image_path": analysis.image_path,
                 "feedback": analysis.feedback,
                 "recommendations": json.loads(analysis.recommendations) if isinstance(analysis.recommendations, str) else analysis.recommendations,
-                "detection_summary": json.loads(analysis.detection_summary) if isinstance(analysis.detection_summary, str) else analysis.detection_summary
+                "detection_summary": json.loads(analysis.detection_summary) if isinstance(analysis.detection_summary, str) else analysis.detection_summary,
+                # ADD THIS - return secondary_summary if it exists
+                "secondary_summary": json.loads(analysis.secondary_summary) if hasattr(analysis, 'secondary_summary') and isinstance(analysis.secondary_summary, str) else (analysis.secondary_summary if hasattr(analysis, 'secondary_summary') else {})
             }
             for analysis in analyses
         ]
     }
 
-# DELETE endpoint
 @router.delete("/history/{analysis_id}")
 async def delete_analysis(
     analysis_id: int,
@@ -52,22 +51,18 @@ async def delete_analysis(
     db: Session = Depends(get_db)
 ):
     """Delete a specific analysis by ID"""
-    
-    # Get the user
     user = db.query(User).filter(User.username == current_user).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Find the analysis
     analysis = db.query(Analysis).filter(
         Analysis.id == analysis_id,
-        Analysis.user_id == user.id  # Ensure user owns this analysis
+        Analysis.user_id == user.id
     ).first()
     
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found or you don't have permission to delete it")
     
-    # Delete the analysis
     db.delete(analysis)
     db.commit()
     
