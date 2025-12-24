@@ -44,11 +44,12 @@ def startup():
     print("✅ Tables ensured")
 
 
-from routers import analysis  
+from routers import analysis, history
 
 os.makedirs("annotated", exist_ok=True)
 app.mount("/annotated", StaticFiles(directory="annotated"), name="annotated")
 app.include_router(analysis.router)
+app.include_router(history.router)
 
 app.add_middleware(
     CORSMiddleware,
