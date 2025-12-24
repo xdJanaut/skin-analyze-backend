@@ -513,11 +513,12 @@ async def analyze_face(
                     else:
                         feedback = f"Analysis detected: {secondary_concerns}. This is considered severe."
                 else:
+                    # Primary found something too, so append
                     if feedback.endswith("!"):
                         feedback = f"{feedback[:-1]}. Additional analysis detected: {secondary_concerns}."
                     else:
                         feedback = f"{feedback} Additional analysis detected: {secondary_concerns}."
-            
+                        
         except Exception as e:
             print(f"⚠️ Secondary analysis failed: {str(e)}")
             print(f"=" * 60)
