@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 class AcneDetection(BaseModel):
@@ -21,4 +21,13 @@ class AnalysisResponse(BaseModel):
     recommendations: List[str]
     timestamp: datetime
     annotated_image_url: str 
+    secondary_analysis_triggered: bool = False
+    secondary_detections: Optional[List[AcneDetection]] = None
+    secondary_summary: Optional[Dict[str, int]] = None
+    secondary_score: Optional[int] = None
+    combined_score: Optional[int] = None
 
+class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }

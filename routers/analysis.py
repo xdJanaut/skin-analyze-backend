@@ -3,7 +3,7 @@ from pathlib import Path
 import shutil
 from datetime import datetime
 from model.schemas import AnalysisResponse, AcneDetection
-from services.roboflow import analyze_image 
+from services.roboflow import analyze_image, analyze_secondary
 from PIL import Image
 import pillow_heif
 from services.image_processor import draw_detections
@@ -23,7 +23,7 @@ router = APIRouter(prefix= "/api", tags= ["analysis"])
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ADD THIS: Classes to exclude from detection
+# Classes to exclude from detection
 EXCLUDED_CLASSES = {'freckles', 'freckle', 'Freckles', 'Freckle'}
 
 def get_db():
@@ -74,7 +74,7 @@ def generate_feedback(acne_count: int, avg_confidence: float):
     return severity, feedback, recommendations
 
 def calculate_skin_score_multi(detection_summary: dict, avg_confidence: float) -> int:
-    base_score = 100
+    base_score = 95  # CHANGED: Cap at 95 instead of 100
     total_penalty = 0
     
     severity_weights = {
@@ -112,7 +112,120 @@ def calculate_skin_score_multi(detection_summary: dict, avg_confidence: float) -
     
     total_penalty = min(total_penalty, 70)
     final_score = base_score - total_penalty
-    return max(30, min(100, int(final_score)))
+    return max(30, min(95, int(final_score)))  # CHANGED: Cap at 95
+
+def calculate_secondary_score(detection_summary: dict, avg_confidence: float) -> int:
+    """Calculate score for secondary skin conditions (melasma, rosacea)"""
+    base_score = 95  # CHANGED: Cap at 95 instead of 100
+    total_penalty = 0
+    
+    # Weights for acne-melasma-rosacea model
+    secondary_weights = {
+        'acne': 6,
+        'Acne': 6,
+        'melasma': 7,
+        'Melasma': 7,
+        'rosacea': 8,
+        'Rosacea': 8,
+    }
+    
+    for condition_type, count in detection_summary.items():
+        weight = secondary_weights.get(condition_type, 5)
+        
+        if count <= 2:
+            penalty = count * weight
+        elif count <= 5:
+            penalty = (2 * weight) + ((count - 2) * (weight * 1.2))
+        else:
+            penalty = (2 * weight) + (3 * weight * 1.2) + ((count - 5) * (weight * 1.0))
+        
+        total_penalty += penalty
+    
+    total_penalty = min(total_penalty, 70)
+    final_score = base_score - total_penalty
+    
+    print(f"🔢 Secondary score calculation: base={base_score}, penalty={total_penalty}, final={final_score}")
+    
+    return max(30, min(95, int(final_score)))  # CHANGED: Cap at 95
+
+def combine_scores(primary_score: int, primary_summary: dict, secondary_score: int, secondary_summary: dict) -> int:
+    """
+    Smart merge: Only apply penalties for conditions that the primary model didn't detect
+    This prevents double-penalization when both models detect the same issues
+    """
+    # Start with primary score
+    combined = primary_score
+    
+    # Define which secondary conditions overlap with primary conditions
+    # These should NOT be penalized again
+    overlapping_conditions = {
+        'acne': ['Acne', 'Pimples', 'papular', 'cystic', 'purulent'],
+        'Acne': ['acne', 'Pimples', 'papular', 'cystic', 'purulent'],
+    }
+    
+    # Weights for secondary conditions (same as calculate_secondary_score)
+    secondary_weights = {
+        'acne': 6,
+        'Acne': 6,
+        'melasma': 7,
+        'Melasma': 7,
+        'rosacea': 8,
+        'Rosacea': 8,
+    }
+    
+    # Check if primary model found any acne-related conditions
+    has_primary_acne = any(
+        key in primary_summary 
+        for key in ['Acne', 'Pimples', 'papular', 'cystic', 'purulent', 'conglobata']
+    )
+    
+    additional_penalty = 0
+    unique_conditions = []
+    
+    print(f"🔍 Smart merge analysis:")
+    print(f"   Primary detected acne: {has_primary_acne}")
+    print(f"   Primary summary: {primary_summary}")
+    print(f"   Secondary summary: {secondary_summary}")
+    
+    # Go through secondary detections
+    for condition_type, count in secondary_summary.items():
+        condition_lower = condition_type.lower()
+        
+        # Check if this is an acne-related condition
+        is_acne_condition = condition_lower in ['acne'] or condition_type in ['Acne']
+        
+        if is_acne_condition and has_primary_acne:
+            # Skip - this overlaps with primary model's acne detection
+            print(f"   ⏭️  Skipping {condition_type} (already detected by primary)")
+            continue
+        
+        # This is a unique condition not found by primary - apply penalty
+        weight = secondary_weights.get(condition_type, 5)
+        
+        if count <= 2:
+            penalty = count * weight
+        elif count <= 5:
+            penalty = (2 * weight) + ((count - 2) * (weight * 1.2))
+        else:
+            penalty = (2 * weight) + (3 * weight * 1.2) + ((count - 5) * (weight * 1.0))
+        
+        additional_penalty += penalty
+        unique_conditions.append(f"{count}x {condition_type}")
+        print(f"   ➕ Adding penalty for {condition_type}: {penalty} (unique condition)")
+    
+    # Apply additional penalties from unique secondary findings
+    combined = primary_score - int(additional_penalty)
+    
+    # Ensure score stays within valid range
+    combined = max(30, min(95, combined))
+    
+    print(f"🔢 Smart merge result:")
+    print(f"   Primary score: {primary_score}")
+    print(f"   Unique secondary conditions: {', '.join(unique_conditions) if unique_conditions else 'None'}")
+    print(f"   Additional penalty: {int(additional_penalty)}")
+    print(f"   Combined score: {combined}")
+    
+    return combined
 
 def generate_feedback_multi(detection_summary: dict, avg_confidence: float):
     total_concerns = sum(detection_summary.values())
@@ -265,9 +378,14 @@ async def analyze_face(
         if file.filename.lower().endswith(('.heic', '.heif')):
             file_path = convert_heic_to_jpg(file_path)
         
+        # PRIMARY ANALYSIS
+        print(f"=" * 60)
+        print(f"🔬 STARTING PRIMARY ANALYSIS")
+        print(f"=" * 60)
+        
         roboflow_result = analyze_image(str(file_path))
         
-        # MODIFIED: Filter out freckles from predictions
+        # Filter out freckles from predictions
         filtered_predictions = [
             pred for pred in roboflow_result.get("predictions", [])
             if pred.get("class", "").lower() not in EXCLUDED_CLASSES
@@ -275,18 +393,11 @@ async def analyze_face(
         
         print(f"🔍 Filtered out {len(roboflow_result.get('predictions', [])) - len(filtered_predictions)} freckle detections")
         
-        annotated_filename = f"annotated_{datetime.now().timestamp()}{file_path.suffix}"
-        annotated_path = ANNOTATED_DIR / annotated_filename
-
-        # MODIFIED: Use filtered predictions for annotation
-        draw_detections(str(file_path), filtered_predictions, str(annotated_path))
-        print(f"📸 Annotated image saved: {annotated_path}")
-        
+        # Process primary detections
         detections = []
         total_confidence = 0
         detection_summary = {}
         
-        # MODIFIED: Process only filtered predictions
         for prediction in filtered_predictions:
             class_name = prediction.get("class", "unknown")
             detection = AcneDetection(
@@ -303,13 +414,133 @@ async def analyze_face(
         
         total_concerns = len(detections)
         avg_confidence = total_confidence / total_concerns if total_concerns > 0 else 0
-        print(f"📊 Detection breakdown: {detection_summary}")
         
+        print(f"📊 Primary detection breakdown: {detection_summary}")
+        
+        # Calculate primary score
         skin_score = calculate_skin_score_multi(detection_summary, avg_confidence)
         _, feedback, recommendations = generate_feedback_multi(detection_summary, avg_confidence)
         severity = determine_severity_from_score(skin_score)
-        print(f"✅ Analysis complete: {total_concerns} total concerns, score: {skin_score}/100")
         
+        print(f"✅ Primary analysis complete: {total_concerns} total concerns, score: {skin_score}/100")
+        
+        # SECONDARY ANALYSIS - Initialize variables
+        secondary_triggered = False
+        secondary_detections = None
+        secondary_summary = None
+        secondary_score = None
+        combined_score = None
+        
+        # Track model sources for color-coding
+        all_detections_for_image = []
+        model_sources = []
+        
+        # Add primary detections
+        for pred in filtered_predictions:
+            all_detections_for_image.append(pred)
+            model_sources.append('primary')
+        
+        # CHANGED: ALWAYS RUN SECONDARY ANALYSIS (removed conditional)
+        print(f"=" * 60)
+        print(f"🔬 RUNNING SECONDARY ANALYSIS")
+        print(f"=" * 60)
+        secondary_triggered = True
+        
+        try:
+            secondary_result = analyze_secondary(str(file_path))
+            secondary_predictions = secondary_result.get("predictions", [])
+            
+            print(f"🔍 Secondary model returned {len(secondary_predictions)} predictions")
+            
+            # Process secondary detections
+            secondary_detections = []
+            secondary_summary = {}
+            secondary_total_confidence = 0
+            
+            for prediction in secondary_predictions:
+                class_name = prediction.get("class", "unknown")
+                confidence = prediction.get("confidence", 0)
+                print(f"  - Detected: {class_name} (confidence: {confidence:.2f})")
+                
+                detection = AcneDetection(
+                    x=prediction["x"],
+                    y=prediction["y"],
+                    width=prediction["width"],
+                    height=prediction["height"],
+                    confidence=prediction["confidence"],
+                    class_name=class_name
+                )
+                secondary_detections.append(detection)
+                secondary_total_confidence += prediction["confidence"]
+                secondary_summary[class_name] = secondary_summary.get(class_name, 0) + 1
+                
+                # Add to image detections
+                all_detections_for_image.append(prediction)
+                model_sources.append('secondary')
+            
+            print(f"📊 Secondary detection summary: {secondary_summary}")
+            
+            secondary_avg_confidence = (
+                secondary_total_confidence / len(secondary_predictions) 
+                if secondary_predictions else 0
+            )
+            
+            # Calculate secondary score
+            secondary_score = calculate_secondary_score(secondary_summary, secondary_avg_confidence)
+            
+            # Combine scores
+            combined_score = combine_scores(skin_score, detection_summary, secondary_score, secondary_summary)
+            
+            print(f"📊 Secondary analysis - Conditions: {len(secondary_predictions)}, Score: {secondary_score}/100")
+            print(f"🎯 Combined score: {combined_score}/100")
+            print(f"=" * 60)
+            
+            # Update feedback if secondary found issues
+            if secondary_summary:
+                secondary_concerns = ", ".join([
+                    f"{count} {condition.replace('_', ' ').title()}"
+                    for condition, count in secondary_summary.items()
+                ])
+                
+                # If primary found nothing but secondary found something
+                if not detection_summary or len(detection_summary) == 0:
+                    # Replace the "no concerns" message entirely
+                    total_secondary = sum(secondary_summary.values())
+                    if total_secondary <= 5:
+                        feedback = f"Analysis detected: {secondary_concerns}. This is considered mild."
+                    elif total_secondary <= 15:
+                        feedback = f"Analysis detected: {secondary_concerns}. This is considered moderate."
+                    else:
+                        feedback = f"Analysis detected: {secondary_concerns}. This is considered severe."
+                else:
+                    if feedback.endswith("!"):
+                        feedback = f"{feedback[:-1]}. Additional analysis detected: {secondary_concerns}."
+                    else:
+                        feedback = f"{feedback} Additional analysis detected: {secondary_concerns}."
+            
+        except Exception as e:
+            print(f"⚠️ Secondary analysis failed: {str(e)}")
+            print(f"=" * 60)
+            # Continue with primary analysis only
+        
+        # Create annotated image with model sources
+        annotated_filename = f"annotated_{datetime.now().timestamp()}{file_path.suffix}"
+        annotated_path = ANNOTATED_DIR / annotated_filename
+        
+        draw_detections(
+            str(file_path), 
+            all_detections_for_image, 
+            str(annotated_path),
+            model_sources=model_sources
+        )
+        
+        print(f"📸 Annotated image saved: {annotated_path}")
+        
+        # Determine final score for database and response
+        final_score_for_db = combined_score if combined_score is not None else skin_score
+        print(f"💾 Final score for database: {final_score_for_db}")
+        
+        # Save to database
         if current_user:
             try:
                 user = db.query(User).filter(User.username == current_user).first()
@@ -318,7 +549,7 @@ async def analyze_face(
                         user_id=user.id,
                         acne_count=total_concerns,
                         severity=severity,
-                        score=skin_score,
+                        score=final_score_for_db,
                         image_path=f"/annotated/{annotated_filename}",
                         created_at=datetime.now(),
                         detection_summary=json.dumps(detection_summary),
@@ -334,6 +565,7 @@ async def analyze_face(
         else:
             print(f"👤 Anonymous user - analysis not saved to history")
         
+        # Return response with secondary analysis data
         return AnalysisResponse(
             acne_count=total_concerns,
             skin_score=skin_score,
@@ -344,7 +576,13 @@ async def analyze_face(
             severity=severity,
             recommendations=recommendations,
             timestamp=datetime.now(),
-            annotated_image_url=f"/annotated/{annotated_filename}"
+            annotated_image_url=f"/annotated/{annotated_filename}",
+            # Secondary analysis fields
+            secondary_analysis_triggered=secondary_triggered,
+            secondary_detections=secondary_detections,
+            secondary_summary=secondary_summary,
+            secondary_score=secondary_score,
+            combined_score=combined_score
         )
     
     except Exception as e:
